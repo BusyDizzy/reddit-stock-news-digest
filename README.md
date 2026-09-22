@@ -6,7 +6,8 @@ It combines three APIs:
 
 1. **[ApeWisdom](https://apewisdom.io)** returns the most-mentioned tickers across Reddit investing communities.
 2. **[SerpApi Google News API](https://serpapi.com/google-news-api)** returns the last 24 hours of headlines for each company.
-3. **Telegram Bot API** posts the digest to a channel once a day.
+3. **OpenAI** (optional) turns each company's headlines into a 2–3 sentence explanation of why it's trending.
+4. **Telegram Bot API** posts the digest to a channel once a day.
 
 Built as a news module for [TickerForge](https://github.com/BusyDizzy), my investing analytics project.
 
@@ -17,9 +18,9 @@ Built as a news module for [TickerForge](https://github.com/BusyDizzy), my inves
 22 Sep 2026
 
 1. $META · Meta Platforms
-Reddit #1 (▲12) · 442 mentions
-• <headline> — Reuters
-• <headline> — Bloomberg
+Reddit #1 (▲9) · 429 mentions
+<2–3 sentence AI summary of why the stock is discussed today>
+Sources: Barchart.com · Seeking Alpha · Pluang
 
 2. $AMD · AMD
 Reddit #2 (▲3) · 320 mentions
@@ -31,6 +32,8 @@ Reddit #2 (▲3) · 320 mentions
 **Ticker selection.** ApeWisdom's `all-stocks` list mixes stocks and ETFs, and it also counts tickers that are ordinary English words (`IT`, `YOU`, `ON`, `ALL`), which inflates their mentions. The script skips ETFs (by name keywords such as *ETF*, *Fund*, *iShares*, plus a list of common ETF tickers), skips common-word tickers, merges share classes of the same company (`GOOG`/`GOOGL`) and keeps the top N by mentions.
 
 **News search.** Each company is queried by name rather than ticker (`"Micron Technology stock when:1d"`), because names are far less ambiguous. `when:1d` is a Google News operator that the SerpApi `google_news` engine passes through. The response is flattened (Google News groups some articles into story clusters), filtered by date, de-duplicated by link and near-identical title, and trimmed to the newest 3 headlines.
+
+**AI summary (optional).** The headlines plus the Reddit attention data (rank and mentions today vs. 24 hours ago) go to an OpenAI model, which writes a short neutral summary of why the stock is being discussed. The prompt restricts the model to facts from the headlines and forbids recommendations. The original articles stay linked as sources. If the key isn't set, `--no-ai` is passed, or a call fails, that company falls back to the plain headline list, so one API error never blocks the post.
 
 **Posting.** Messages use Telegram HTML formatting with all text escaped, link previews disabled, and they are split under the 4096-character limit without breaking a company's block.
 
@@ -65,6 +68,9 @@ Each run uses one SerpApi search per ticker. Eight tickers on weekdays is roughl
 | `--tickers` / `MAX_TICKERS` | 8 | Companies in the digest |
 | `--per-ticker` / `NEWS_PER_TICKER` | 3 | Headlines per company |
 | `--min-mentions` / `MIN_MENTIONS` | 20 | Stop once mentions drop below this |
+| `--no-ai` | off | Headlines only, skip the LLM step |
+| `OPENAI_MODEL` | none | Model for summaries (required if `OPENAI_API_KEY` is set) |
+| `SUMMARY_LANGUAGE` | English | Language of the summaries |
 | `--save-json FILE` | none | Save collected data (useful for debugging or feeding another service) |
 | `--dry-run` | off | Print instead of posting |
 
