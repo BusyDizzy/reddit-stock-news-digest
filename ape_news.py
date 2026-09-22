@@ -189,8 +189,11 @@ SUMMARY_PROMPT = """You write the daily news digest for an investing Telegram ch
 For the stock below, explain in {language} why it is being discussed today.
 
 Rules:
-- 2-3 sentences, at most 60 words, plain text (no markdown, no emojis, no hashtags).
+- 2-3 sentences, at most 50 words, plain text (no markdown, no emojis, no hashtags).
+- Start with the main catalyst (the event), not with side effects like a CEO's net worth.
 - Use ONLY facts from the headlines below. Never invent numbers, prices or events.
+- Attribute opinions exactly as narrowly as the headlines do: one opinion piece is
+  "a Seeking Alpha author", not "analysts" or "some analysts".
 - If headlines disagree (bullish vs bearish), say so briefly - that tension is the story.
 - If the headlines don't explain the attention, say that clearly in one sentence.
 - Neutral tone. No investment advice, no "buy"/"sell" recommendations.
