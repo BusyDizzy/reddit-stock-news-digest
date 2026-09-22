@@ -69,6 +69,7 @@ Each run uses one SerpApi search per ticker. Eight tickers on weekdays is roughl
 | `--per-ticker` / `NEWS_PER_TICKER` | 3 | Headlines per company |
 | `--min-mentions` / `MIN_MENTIONS` | 20 | Stop once mentions drop below this |
 | `--no-ai` | off | Headlines only, skip the LLM step |
+| `--ai-headlines` / `AI_HEADLINES` | 8 | Headlines the LLM reads per company (from the same search, no extra cost) |
 | `OPENAI_MODEL` | none | Model for summaries (required if `OPENAI_API_KEY` is set) |
 | `SUMMARY_LANGUAGE` | English | Language of the summaries |
 | `--save-json FILE` | none | Save collected data (useful for debugging or feeding another service) |

@@ -209,7 +209,8 @@ def summarize(session: requests.Session, api_key: str, model: str,
               company: dict, language: str) -> str | None:
     """Ask the LLM for a short 'why is it trending' summary. Returns None on any failure."""
     headlines = "\n".join(
-        f"- {a['title']} ({a['source'] or 'unknown source'})" for a in company["news"]
+        f"- {a['title']} ({a['source'] or 'unknown source'})"
+        for a in company.get("news_all", company["news"])
     )
     prompt = SUMMARY_PROMPT.format(
         language=language, ticker=company["ticker"], name=company["name"],
@@ -315,6 +316,8 @@ def main() -> None:
     parser.add_argument("--per-ticker", type=int, default=int(env("NEWS_PER_TICKER", "3")))
     parser.add_argument("--min-mentions", type=int, default=int(env("MIN_MENTIONS", "20")))
     parser.add_argument("--no-ai", action="store_true", help="skip LLM summaries, post headlines only")
+    parser.add_argument("--ai-headlines", type=int, default=int(env("AI_HEADLINES", "8")),
+                        help="how many headlines the LLM reads per ticker (same SerpApi call, no extra cost)")
     parser.add_argument("--save-json", help="also write the collected data to this file")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
@@ -333,10 +336,12 @@ def main() -> None:
 
     for c in companies:
         try:
-            c["news"] = fetch_news(session, api_key, c, args.per_ticker, max_age_hours=30)
+            c["news_all"] = fetch_news(session, api_key, c,
+                                       max(args.per_ticker, args.ai_headlines), max_age_hours=30)
         except requests.RequestException as exc:
             log.error("News for %s failed: %s", c["ticker"], exc)
-            c["news"] = []
+            c["news_all"] = []
+        c["news"] = c["news_all"][:args.per_ticker]  # shown as links in the post
         time.sleep(1)  # be gentle; SerpApi also has hourly throughput limits
 
     openai_key = env("OPENAI_API_KEY")
