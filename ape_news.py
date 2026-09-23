@@ -82,6 +82,7 @@ SERPAPI_URL = "https://serpapi.com/search.json"
 SERPAPI_ACCOUNT_URL = "https://serpapi.com/account.json"
 TELEGRAM_URL = "https://api.telegram.org/bot{token}/sendMessage"
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
+CONTEXT_TIMEOUT = 20
 TELEGRAM_LIMIT = 4096
 
 RETRYABLE_STATUS = {408, 425, 429, 500, 502, 503, 504}
@@ -733,6 +734,104 @@ def checked_account_status(
     return status
 
 
+# ----------------------------------------------------------- market context
+
+def fetch_market_context(
+    session: requests.Session, tickers: list[str]
+) -> dict[str, dict[str, Any]]:
+    """Optional market context (volume, insiders, fund flows, links) per ticker.
+
+    The provider is any HTTP endpoint returning {"MU": {...}, "META": {...}}.
+    It is deliberately optional: without CONTEXT_API_URL the digest is unchanged,
+    and any failure degrades to a digest without the context line instead of
+    failing the run.
+    """
+    base_url = env("CONTEXT_API_URL")
+    if not base_url or not tickers:
+        return {}
+    headers = {}
+    token = env("CONTEXT_API_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        response = request_with_retry(
+            session, "GET", base_url,
+            params={"tickers": ",".join(tickers)},
+            headers=headers, timeout=CONTEXT_TIMEOUT, service="context API",
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except (requests.RequestException, ValueError) as exc:
+        log.warning("Market context unavailable: %s", exc)
+        return {}
+    if not isinstance(payload, dict):
+        log.warning("Market context ignored: unexpected payload type")
+        return {}
+    return {
+        str(ticker).upper(): value
+        for ticker, value in payload.items()
+        if isinstance(value, dict)
+    }
+
+
+def format_percent(value: Any) -> str | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    # Small moves need a decimal (1.2% is not 1%), large ones do not.
+    text = f"{number:+.0f}" if abs(number) >= 10 else f"{number:+.1f}"
+    return text.removesuffix(".0") + "%"
+
+
+def change_measure(label: str, values: Any) -> str | None:
+    """'Price 1d +1.2% · 1w -3%' from {"daily_pct": 1.2, "weekly_pct": -3}."""
+    if not isinstance(values, dict):
+        return None
+    daily = format_percent(values.get("daily_pct"))
+    weekly = format_percent(values.get("weekly_pct"))
+    parts = [item for item in (
+        f"1d {daily}" if daily else "",
+        f"1w {weekly}" if weekly else "",
+    ) if item]
+    return f"{label} " + " · ".join(parts) if parts else None
+
+
+def context_lines(context: dict[str, Any], escape: Any) -> list[str]:
+    """Market context as short lines: phones wrap one long line into a mess."""
+    lines: list[str] = []
+    movement = [item for item in (
+        change_measure("Price", context.get("price")),
+        change_measure("Volume", context.get("volume")),
+    ) if item]
+    if movement:
+        lines.append(escape(" | ".join(movement), quote=False))
+
+    ownership: list[str] = []
+    insiders = context.get("insiders_3m")
+    if insiders:
+        ownership.append(f"Insiders 3m: {escape(str(insiders), quote=False)}")
+    funds = context.get("funds")
+    if isinstance(funds, dict) and funds.get("direction"):
+        quarter = funds.get("quarter")
+        label = f"Funds {quarter}" if quarter else "Funds"
+        ownership.append(
+            f"{escape(str(label), quote=False)}: "
+            f"{escape(str(funds['direction']), quote=False)}"
+        )
+    if ownership:
+        lines.append(" | ".join(ownership))
+    return lines
+
+
+def context_links(context: dict[str, Any], escape: Any) -> str | None:
+    """The tracked link into the Telegram bot, rendered as a word, not a URL."""
+    url = context.get("details_url")
+    if isinstance(url, str) and url.startswith(("http://", "https://")):
+        return f'<a href="{escape(url, quote=True)}">Details</a>'
+    return None
+
+
 # ------------------------------------------------------------------- LLM
 
 SUMMARY_PROMPT = """You write a daily evidence-based digest for an investing Telegram channel.
@@ -885,6 +984,8 @@ def build_blocks(
             lines.append(
                 f"Evidence confidence: <b>{escape(str(company.get('confidence', 'low')).upper())}</b>"
             )
+        context = company.get("context") or {}
+        lines.extend(context_lines(context, escape))
         if company.get("summary"):
             lines.append(escape(company["summary"], quote=False))
             links = " · ".join(
@@ -900,11 +1001,18 @@ def build_blocks(
                     f'• <a href="{escape(article["link"], quote=True)}">'
                     f'{escape(article["title"], quote=False)}</a>{source}'
                 )
+        extra_links = context_links(context, escape)
+        if extra_links:
+            lines.append(extra_links)
         blocks.append("\n".join(lines))
     footer = "Mentions: Reddit via ApeWisdom · News: Google News via SerpApi"
     if any(company.get("summary") for company in publishable):
         footer += " · Summaries: AI-generated from cited evidence"
     blocks.append(f"<i>{footer}. Not investment advice.</i>")
+    hashtags = env("DIGEST_HASHTAGS", "#redditnews #apewisdom #stocks")
+    if hashtags:
+        # One set of tags for the whole digest: per-ticker tag lists read as spam.
+        blocks[-1] += "\n" + escape(hashtags, quote=False)
     return blocks
 
 
@@ -1225,7 +1333,9 @@ def collect_companies(
     companies = select_tickers(fetch_trending(session), args.tickers, args.min_mentions)
     log.info("Selected: %s", ", ".join(company["ticker"] for company in companies))
     max_results = max(args.per_ticker, args.ai_headlines)
+    context_by_ticker = fetch_market_context(session, [c["ticker"] for c in companies])
     for company in companies:
+        company["context"] = context_by_ticker.get(company["ticker"], {})
         try:
             company["news_all"] = fetch_news(
                 session, api_key, company, profiles, max_results, args.max_age_hours

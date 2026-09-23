@@ -22,8 +22,11 @@ Built as a news module for [TickerForge](https://github.com/BusyDizzy), my inves
 1. $META · Meta Platforms
 Reddit #1 (▲9) · 429 mentions
 Evidence confidence: MEDIUM
+Price 1d +1.2% · 1w -3% | Volume 1d +24% · 1w -3.4%
+Insiders 3m: net selling | Funds Q2 2026: buying
 <2–3 sentence summary of the likely catalyst, with disagreement preserved>
 Sources: Barchart.com · Investor's Business Daily · Seeking Alpha
+Details
 ```
 
 ## How it works
@@ -47,6 +50,8 @@ Sources: Barchart.com · Investor's Business Daily · Seeking Alpha
 **AI summary (optional).** The model receives the numbered evidence grouped by event, each event's confidence, and the Reddit attention data. The prompt restricts it to that evidence, forbids claiming that news caused the Reddit attention, requires preserving disagreement, and asks it to name the strongest evidence items — those become the source links under the summary. If the key isn't set, `--no-ai` is passed, or a call fails, that company falls back to a plain headline list.
 
 **Cross-day suppression.** Google News keeps returning the same story for days, and a ticker can sit at the top of Reddit all week. Before building the digest, articles whose canonical URL already appeared in a digest within the last `REPEAT_WINDOW_DAYS` days are dropped. A ticker with nothing new is stored but left out of the post, and if no ticker has fresh coverage the run stores its snapshot and skips posting entirely (run status `skipped`) rather than sending a notification with nothing in it.
+
+**Market context (optional).** If `CONTEXT_API_URL` is set, the run asks that endpoint once for all selected tickers and adds two short lines per company — price and volume change over a day and a week, then insider direction and fund flows — plus a tracked *Details* link into the Telegram bot. Short lines are deliberate: one long line wraps badly on a phone. The provider is any service returning `{"MU": {...}}`; every field is optional and a failure simply removes the line rather than the digest. This keeps market data in the system that owns it instead of duplicating it here.
 
 **Storage and idempotency.** Before spending any SerpApi credits, the run takes a PostgreSQL advisory lock and looks up today's digest. If it was already posted, the run exits; if delivery was interrupted, it resumes by sending only the messages that have no delivery record. Snapshots (ticker, Reddit rank and mentions, events, sources, confidence, summary) are written per run, which is what makes historical analysis possible — for example, whether Reddit attention leads price moves.
 
@@ -109,8 +114,28 @@ Because delivery is idempotent per channel per day, a retry after a failure re-s
 | `SUMMARY_LANGUAGE` | English | Language of the summaries |
 | `DIGEST_TIMEZONE` | UTC | Timezone that decides which calendar day a run belongs to |
 | `ENTITY_PROFILES_FILE` | none | JSON file with aliases, products, executives, exchanges |
+| `CONTEXT_API_URL` / `CONTEXT_API_TOKEN` | none | Optional market-context provider and its bearer token |
+| `DIGEST_HASHTAGS` | `#redditnews #apewisdom #stocks` | One tag line for the whole digest; empty disables |
 | `--save-json FILE` | none | Save the normalised collection for debugging |
 | `--dry-run` | off | Print instead of storing and posting; reads the database only if `DATABASE_URL` is set |
+
+## Market context contract
+
+```
+GET $CONTEXT_API_URL?tickers=MU,META        Authorization: Bearer $CONTEXT_API_TOKEN
+
+{
+  "MU": {
+    "price": {"daily_pct": 1.2, "weekly_pct": -3.0},
+    "volume": {"daily_pct": 24.0, "weekly_pct": -3.4},
+    "insiders_3m": "net selling",
+    "funds": {"quarter": "Q2 2026", "direction": "buying"},
+    "details_url": "https://t.me/<bot>?start=<token>"
+  }
+}
+```
+
+Unknown tickers may be omitted; any field may be omitted.
 
 ## Schema
 
