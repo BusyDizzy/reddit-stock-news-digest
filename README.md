@@ -46,7 +46,7 @@ Sources: Barchart.com · Investor's Business Daily · Seeking Alpha
 
 **AI summary (optional).** The model receives the numbered evidence grouped by event, each event's confidence, and the Reddit attention data. The prompt restricts it to that evidence, forbids claiming that news caused the Reddit attention, requires preserving disagreement, and asks it to name the strongest evidence items — those become the source links under the summary. If the key isn't set, `--no-ai` is passed, or a call fails, that company falls back to a plain headline list.
 
-**Cross-day suppression.** Google News keeps returning the same story for days, and a ticker can sit at the top of Reddit all week. Before building the digest, articles whose canonical URL already appeared in a digest within the last `REPEAT_WINDOW_DAYS` days are dropped. A ticker that is still trending with nothing new says so explicitly instead of repeating yesterday's links.
+**Cross-day suppression.** Google News keeps returning the same story for days, and a ticker can sit at the top of Reddit all week. Before building the digest, articles whose canonical URL already appeared in a digest within the last `REPEAT_WINDOW_DAYS` days are dropped. A ticker with nothing new is stored but left out of the post, and if no ticker has fresh coverage the run stores its snapshot and skips posting entirely (run status `skipped`) rather than sending a notification with nothing in it.
 
 **Storage and idempotency.** Before spending any SerpApi credits, the run takes a PostgreSQL advisory lock and looks up today's digest. If it was already posted, the run exits; if delivery was interrupted, it resumes by sending only the messages that have no delivery record. Snapshots (ticker, Reddit rank and mentions, events, sources, confidence, summary) are written per run, which is what makes historical analysis possible — for example, whether Reddit attention leads price moves.
 
@@ -114,7 +114,7 @@ Because delivery is idempotent per channel per day, a retry after a failure re-s
 
 ## Schema
 
-- `tickerforge_news.digest_run` — one row per channel per day: status, quota snapshot, rendered messages.
+- `tickerforge_news.digest_run` — one row per channel per day: status (`collecting`, `posting`, `posted`, `skipped`, `failed`), quota snapshot, rendered messages.
 - `tickerforge_news.ticker_snapshot` — per run and ticker: Reddit rank and mentions (now and 24h ago), confidence, summary, events and sources as JSONB.
 - `tickerforge_news.delivery` — which message of which run reached Telegram, with its message id.
 

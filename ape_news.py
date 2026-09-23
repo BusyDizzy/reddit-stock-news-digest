@@ -869,8 +869,13 @@ def build_blocks(
     companies: list[dict[str, Any]], header: str, now: datetime, per_ticker: int
 ) -> list[str]:
     escape = html.escape
+    # Tickers without fresh coverage are stored but never printed: a post made of
+    # "no new coverage" lines is not worth a notification.
+    publishable = [company for company in companies if company.get("news")]
+    if not publishable:
+        return []
     blocks = [f"<b>{escape(header)}</b>\n<i>{now:%d %b %Y}</i>"]
-    for index, company in enumerate(companies, 1):
+    for index, company in enumerate(publishable, 1):
         lines = [
             f"<b>{index}. ${escape(company['ticker'])} · {escape(company['name'])}</b>\n"
             f"Reddit #{company['rank']} ({rank_change(company)}) · {company['mentions']} mentions"
@@ -880,13 +885,7 @@ def build_blocks(
             lines.append(
                 f"Evidence confidence: <b>{escape(str(company.get('confidence', 'low')).upper())}</b>"
             )
-        if not company.get("news"):
-            lines.append(
-                "Still trending, but no new coverage since the last digest."
-                if company.get("repeats_only")
-                else "No fresh, entity-matched headlines."
-            )
-        elif company.get("summary"):
+        if company.get("summary"):
             lines.append(escape(company["summary"], quote=False))
             links = " · ".join(
                 f'<a href="{escape(article["link"], quote=True)}">'
@@ -903,7 +902,7 @@ def build_blocks(
                 )
         blocks.append("\n".join(lines))
     footer = "Mentions: Reddit via ApeWisdom · News: Google News via SerpApi"
-    if any(company.get("summary") for company in companies):
+    if any(company.get("summary") for company in publishable):
         footer += " · Summaries: AI-generated from cited evidence"
     blocks.append(f"<i>{footer}. Not investment advice.</i>")
     return blocks
@@ -961,7 +960,7 @@ CREATE TABLE IF NOT EXISTS tickerforge_news.digest_run (
     id BIGSERIAL PRIMARY KEY,
     digest_key TEXT NOT NULL UNIQUE,
     digest_date DATE NOT NULL,
-    status TEXT NOT NULL CHECK (status IN ('collecting', 'posting', 'posted', 'failed')),
+    status TEXT NOT NULL CHECK (status IN ('collecting', 'posting', 'posted', 'skipped', 'failed')),
     account_status JSONB,
     rendered_messages JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -998,6 +997,13 @@ CREATE TABLE IF NOT EXISTS tickerforge_news.delivery (
     sent_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (run_id, message_index)
 );
+
+-- Migration for databases created before the 'skipped' status existed.
+ALTER TABLE tickerforge_news.digest_run
+    DROP CONSTRAINT IF EXISTS digest_run_status_check;
+ALTER TABLE tickerforge_news.digest_run
+    ADD CONSTRAINT digest_run_status_check
+    CHECK (status IN ('collecting', 'posting', 'posted', 'skipped', 'failed'));
 """
 
 
@@ -1178,6 +1184,18 @@ class Database:
             )
         self.connection.commit()
 
+    def mark_skipped(self, run_id: int, reason: str) -> None:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE tickerforge_news.digest_run
+                SET status = 'skipped', updated_at = now(), error = %s
+                WHERE id = %s AND status <> 'posted'
+                """,
+                (reason[:2000], run_id),
+            )
+        self.connection.commit()
+
     def mark_failed(self, run_id: int, error: str) -> None:
         with self.connection.cursor() as cursor:
             cursor.execute(
@@ -1335,6 +1353,9 @@ def main() -> None:
             Path(args.save_json).write_text(
                 json.dumps(json_ready(companies), indent=2, ensure_ascii=False), encoding="utf-8"
             )
+        if not messages:
+            log.info("Nothing new to publish today; no post would be sent")
+            return
         print("\n\n----- message break -----\n\n".join(messages))
         return
 
@@ -1374,6 +1395,11 @@ def main() -> None:
                 json.dumps(json_ready(companies), indent=2, ensure_ascii=False), encoding="utf-8"
             )
         db.save_collection(run_id, companies, messages)
+        if not messages:
+            # The snapshot is still stored, so tomorrow's run knows what was seen.
+            db.mark_skipped(run_id, "no fresh coverage for any selected ticker")
+            log.info("Nothing new to publish today; skipped posting to %s", chat_id)
+            return
         publish_pending(db, session, run_id, messages, token, chat_id)
         log.info("Posted %d message(s) to %s", len(messages), chat_id)
     except BaseException as exc:  # SystemExit/KeyboardInterrupt must be recorded too
