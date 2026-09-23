@@ -1,0 +1,38 @@
+{
+  "META": {
+    "aliases": ["Meta Platforms", "Meta", "Facebook"],
+    "products": ["Muse", "Instagram", "WhatsApp", "Threads", "Llama", "Reality Labs", "Quest"],
+    "ceos": ["Mark Zuckerberg", "Zuckerberg", "Susan Li"],
+    "exchanges": ["NASDAQ"]
+  },
+  "MU": {
+    "aliases": ["Micron Technology", "Micron"],
+    "products": ["HBM", "HBM4", "DRAM", "NAND", "Crucial"],
+    "ceos": ["Sanjay Mehrotra", "Mehrotra"],
+    "exchanges": ["NASDAQ"]
+  },
+  "AMD": {
+    "aliases": ["Advanced Micro Devices", "AMD"],
+    "products": ["Ryzen", "Radeon", "EPYC", "Instinct", "MI300", "MI350", "Helios"],
+    "ceos": ["Lisa Su"],
+    "exchanges": ["NASDAQ"]
+  },
+  "NVDA": {
+    "aliases": ["NVIDIA", "Nvidia"],
+    "products": ["CUDA", "GeForce", "Blackwell", "Rubin", "H100", "GB200"],
+    "ceos": ["Jensen Huang"],
+    "exchanges": ["NASDAQ"]
+  },
+  "INTC": {
+    "aliases": ["Intel"],
+    "products": ["Xeon", "Core Ultra", "Gaudi", "Foundry"],
+    "ceos": ["Lip-Bu Tan"],
+    "exchanges": ["NASDAQ"]
+  },
+  "TSLA": {
+    "aliases": ["Tesla"],
+    "products": ["Cybertruck", "Model 3", "Model Y", "Robotaxi", "Optimus", "FSD"],
+    "ceos": ["Elon Musk", "Musk"],
+    "exchanges": ["NASDAQ"]
+  }
+}

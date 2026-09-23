@@ -46,6 +46,8 @@ Sources: Barchart.com · Investor's Business Daily · Seeking Alpha
 
 **AI summary (optional).** The model receives the numbered evidence grouped by event, each event's confidence, and the Reddit attention data. The prompt restricts it to that evidence, forbids claiming that news caused the Reddit attention, requires preserving disagreement, and asks it to name the strongest evidence items — those become the source links under the summary. If the key isn't set, `--no-ai` is passed, or a call fails, that company falls back to a plain headline list.
 
+**Cross-day suppression.** Google News keeps returning the same story for days, and a ticker can sit at the top of Reddit all week. Before building the digest, articles whose canonical URL already appeared in a digest within the last `REPEAT_WINDOW_DAYS` days are dropped. A ticker that is still trending with nothing new says so explicitly instead of repeating yesterday's links.
+
 **Storage and idempotency.** Before spending any SerpApi credits, the run takes a PostgreSQL advisory lock and looks up today's digest. If it was already posted, the run exits; if delivery was interrupted, it resumes by sending only the messages that have no delivery record. Snapshots (ticker, Reddit rank and mentions, events, sources, confidence, summary) are written per run, which is what makes historical analysis possible — for example, whether Reddit attention leads price moves.
 
 **Reliability.** Every outbound call (ApeWisdom, SerpApi, OpenAI, Telegram) goes through one retry helper with bounded exponential backoff, jitter and `Retry-After` support. Authentication and quota failures from SerpApi are treated as fatal instead of being retried into a half-empty digest. Note the one case the Bot API cannot solve: if Telegram times out *after* accepting a message, the retry can duplicate that message — Telegram has no idempotency key.
@@ -101,13 +103,14 @@ Because delivery is idempotent per channel per day, a retry after a failure re-s
 | `--ai-headlines` / `AI_HEADLINES` | 10 | Entity-matched headlines kept per company (same search, no extra cost) |
 | `--min-mentions` / `MIN_MENTIONS` | 20 | Stop once mentions drop below this |
 | `--max-age-hours` / `MAX_NEWS_AGE_HOURS` | 30 | Reject older articles; undated articles are always rejected |
+| `--repeat-window-days` / `REPEAT_WINDOW_DAYS` | 3 | Suppress articles already published in earlier digests (0 disables) |
 | `--no-ai` | off | Headlines only, skip the LLM step |
 | `OPENAI_MODEL` | none | Model for summaries (required if `OPENAI_API_KEY` is set) |
 | `SUMMARY_LANGUAGE` | English | Language of the summaries |
 | `DIGEST_TIMEZONE` | UTC | Timezone that decides which calendar day a run belongs to |
 | `ENTITY_PROFILES_FILE` | none | JSON file with aliases, products, executives, exchanges |
 | `--save-json FILE` | none | Save the normalised collection for debugging |
-| `--dry-run` | off | Print instead of storing and posting; no database required |
+| `--dry-run` | off | Print instead of storing and posting; reads the database only if `DATABASE_URL` is set |
 
 ## Schema
 
