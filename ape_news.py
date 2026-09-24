@@ -82,7 +82,9 @@ SERPAPI_URL = "https://serpapi.com/search.json"
 SERPAPI_ACCOUNT_URL = "https://serpapi.com/account.json"
 TELEGRAM_URL = "https://api.telegram.org/bot{token}/sendMessage"
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
-CONTEXT_TIMEOUT = 20
+CONTEXT_TIMEOUT = 6
+CONTEXT_EMPTY_RETRIES = 3
+CONTEXT_EMPTY_RETRY_DELAY = 5.0
 TELEGRAM_LIMIT = 4096
 
 RETRYABLE_STATUS = {408, 425, 429, 500, 502, 503, 504}
@@ -165,6 +167,18 @@ def env(name: str, default: str | None = None, required: bool = False) -> str | 
     if required and not value:
         raise SystemExit(f"Missing required environment variable: {name}")
     return value
+
+
+def env_flag(name: str, default: bool = False) -> bool:
+    value = env(name)
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off", ""}:
+        return False
+    raise SystemExit(f"Invalid boolean environment variable {name}: {value}")
 
 
 def load_dotenv(path: str = ".env") -> None:
@@ -746,32 +760,64 @@ def fetch_market_context(
     and any failure degrades to a digest without the context line instead of
     failing the run.
     """
+    if not tickers:
+        return {}
+    required = env_flag("CONTEXT_API_REQUIRED")
     base_url = env("CONTEXT_API_URL")
-    if not base_url or not tickers:
+    if not base_url:
+        if required:
+            raise RuntimeError("CONTEXT_API_REQUIRED is true but CONTEXT_API_URL is not set")
         return {}
     headers = {}
     token = env("CONTEXT_API_TOKEN")
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    try:
-        response = request_with_retry(
-            session, "GET", base_url,
-            params={"tickers": ",".join(tickers)},
-            headers=headers, timeout=CONTEXT_TIMEOUT, service="context API",
+    for empty_attempt in range(CONTEXT_EMPTY_RETRIES + 1):
+        try:
+            response = request_with_retry(
+                session, "GET", base_url,
+                params={"tickers": ",".join(tickers)},
+                headers=headers, timeout=CONTEXT_TIMEOUT, service="context API",
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except (requests.RequestException, ValueError) as exc:
+            message = f"Market context unavailable: {exc}"
+            if required:
+                raise RuntimeError(message) from exc
+            log.warning("%s", message)
+            return {}
+        if not isinstance(payload, dict):
+            message = "Market context returned an unexpected payload type"
+            if required:
+                raise RuntimeError(message)
+            log.warning("%s; ignoring it", message)
+            return {}
+
+        context = {
+            str(ticker).upper(): value
+            for ticker, value in payload.items()
+            if isinstance(value, dict)
+        }
+        if context:
+            return context
+        if empty_attempt == CONTEXT_EMPTY_RETRIES:
+            message = (
+                f"Market context stayed empty after {CONTEXT_EMPTY_RETRIES + 1} request(s)"
+            )
+            if required:
+                raise RuntimeError(message)
+            log.warning("%s; continuing without it", message)
+            return {}
+
+        delay = CONTEXT_EMPTY_RETRY_DELAY * (2 ** empty_attempt)
+        log.warning(
+            "Market context returned an empty object; retrying in %.1fs (%d/%d)",
+            delay, empty_attempt + 1, CONTEXT_EMPTY_RETRIES,
         )
-        response.raise_for_status()
-        payload = response.json()
-    except (requests.RequestException, ValueError) as exc:
-        log.warning("Market context unavailable: %s", exc)
-        return {}
-    if not isinstance(payload, dict):
-        log.warning("Market context ignored: unexpected payload type")
-        return {}
-    return {
-        str(ticker).upper(): value
-        for ticker, value in payload.items()
-        if isinstance(value, dict)
-    }
+        time.sleep(delay)
+
+    return {}
 
 
 def format_percent(value: Any) -> str | None:
