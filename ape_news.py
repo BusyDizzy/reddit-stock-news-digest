@@ -756,9 +756,7 @@ def fetch_market_context(
     """Optional market context (volume, insiders, fund flows, links) per ticker.
 
     The provider is any HTTP endpoint returning {"MU": {...}, "META": {...}}.
-    It is deliberately optional: without CONTEXT_API_URL the digest is unchanged,
-    and any failure degrades to a digest without the context line instead of
-    failing the run.
+    It is deliberately optional unless CONTEXT_API_REQUIRED is enabled.
     """
     if not tickers:
         return {}

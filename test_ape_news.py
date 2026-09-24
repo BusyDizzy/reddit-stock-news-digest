@@ -15,7 +15,7 @@ class FetchMarketContextTest(unittest.TestCase):
     @patch.dict(
         os.environ,
         {
-            "CONTEXT_API_URL": "http://127.0.0.1:8098/api/v1/market-context",
+            "CONTEXT_API_URL": "https://context-api.test/v1/context",
             "CONTEXT_API_REQUIRED": "false",
         },
         clear=False,
@@ -37,7 +37,7 @@ class FetchMarketContextTest(unittest.TestCase):
     @patch.dict(
         os.environ,
         {
-            "CONTEXT_API_URL": "http://127.0.0.1:8098/api/v1/market-context",
+            "CONTEXT_API_URL": "https://context-api.test/v1/context",
             "CONTEXT_API_REQUIRED": "false",
         },
         clear=False,
@@ -56,7 +56,7 @@ class FetchMarketContextTest(unittest.TestCase):
     @patch.dict(
         os.environ,
         {
-            "CONTEXT_API_URL": "http://127.0.0.1:8098/api/v1/market-context",
+            "CONTEXT_API_URL": "https://context-api.test/v1/context",
             "CONTEXT_API_REQUIRED": "false",
         },
         clear=False,
@@ -77,7 +77,7 @@ class FetchMarketContextTest(unittest.TestCase):
     @patch.dict(
         os.environ,
         {
-            "CONTEXT_API_URL": "http://127.0.0.1:8098/api/v1/market-context",
+            "CONTEXT_API_URL": "https://context-api.test/v1/context",
             "CONTEXT_API_REQUIRED": "true",
         },
         clear=False,
